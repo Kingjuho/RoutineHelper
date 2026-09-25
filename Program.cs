@@ -75,13 +75,14 @@ internal sealed class RoutineContext : ApplicationContext
     private bool _busy;
     private string? _hostsError;
     private SettingsForm? _settings;
+    private string ReminderStatus => _config.ShutdownReminderEnabled ? _config.ShutdownReminder : "꺼짐";
 
     public RoutineContext(string configPath)
     {
         _configPath = configPath;
         _config = Config.Load(configPath);
         _configWriteTime = File.GetLastWriteTimeUtc(configPath);
-        AppLog.Write($"설정 로드: {_configPath}; 종료 알림: {_config.ShutdownReminder}");
+        AppLog.Write($"설정 로드: {_configPath}; 종료 알림: {ReminderStatus}");
         _reminderStatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "RoutineHelper", "last-reminder.txt");
         var previousReminderState = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -149,9 +150,7 @@ internal sealed class RoutineContext : ApplicationContext
             }
 
             if (active) StopBlockedProcesses();
-            var reminderTime = Config.ParseTime(_config.ShutdownReminder);
-            if (now.TimeOfDay >= reminderTime && now.TimeOfDay < reminderTime.Add(TimeSpan.FromMinutes(1)) &&
-                _lastReminderDate.Date != now.Date)
+            if (_config.IsReminderDue(now, _lastReminderDate))
             {
                 _lastReminderDate = now.Date;
                 Directory.CreateDirectory(Path.GetDirectoryName(_reminderStatePath)!);
@@ -189,10 +188,21 @@ internal sealed class RoutineContext : ApplicationContext
         // 읽기와 검증에 성공한 설정만 교체한다.
         var config = Config.Load(_configPath);
         var modified = File.GetLastWriteTimeUtc(_configPath);
+        // 파일 초기화에 성공한 뒤 메모리 상태와 설정을 함께 갱신한다.
+        _lastReminderDate = ResetReminderIfTimeChanged(_config, config, _reminderStatePath, _lastReminderDate);
         _config = config;
         _configWriteTime = modified;
         _lastHostsCheck = DateTime.MinValue;
-        AppLog.Write($"설정 다시 읽기: {_configPath}; 종료 알림: {_config.ShutdownReminder}");
+        AppLog.Write($"설정 다시 읽기: {_configPath}; 종료 알림: {ReminderStatus}");
+    }
+
+    internal static DateTime ResetReminderIfTimeChanged(Config previous, Config next, string statePath, DateTime lastReminderDate)
+    {
+        if (previous.ShutdownReminder == next.ShutdownReminder) return lastReminderDate;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(statePath))!);
+        // 빈 파일을 남겨 이전 RoutineChecker 기록으로 되돌아가지 않게 한다.
+        File.WriteAllText(statePath, string.Empty);
+        return DateTime.MinValue;
     }
 
     private void OpenMainWindow()
@@ -289,7 +299,7 @@ internal sealed class RoutineContext : ApplicationContext
     private void ShowStatus()
     {
         var active = _config.IsActive(DateTime.Now);
-        MessageBox.Show($"현재 차단: {(active ? "활성" : "비활성")}\n사이트: {_config.BlockedSites.Count}개\n프로세스: {_config.BlockedProcesses.Count}개\n종료 알림: {_config.ShutdownReminder}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
+        MessageBox.Show($"현재 차단: {(active ? "활성" : "비활성")}\n사이트: {_config.BlockedSites.Count}개\n프로세스: {_config.BlockedProcesses.Count}개\n종료 알림: {ReminderStatus}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
             "RoutineHelper 상태", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 

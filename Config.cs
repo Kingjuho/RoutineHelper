@@ -10,6 +10,7 @@ internal sealed class Config
     public List<string> BlockedSites { get; set; } = [];
     public List<string> BlockedProcesses { get; set; } = [];
     public string ShutdownReminder { get; set; } = "02:00";
+    public bool ShutdownReminderEnabled { get; set; } = true;
 
     public static Config Load(string path)
     {
@@ -73,6 +74,13 @@ internal sealed class Config
             return (i.Days.Contains(today) && time >= start) ||
                    (i.Days.Contains((today + 6) % 7) && time < end);
         });
+    }
+
+    public bool IsReminderDue(DateTime now, DateTime lastReminderDate)
+    {
+        if (!ShutdownReminderEnabled || lastReminderDate.Date == now.Date) return false;
+        var reminderTime = ParseTime(ShutdownReminder);
+        return now.TimeOfDay >= reminderTime && now.TimeOfDay < reminderTime.Add(TimeSpan.FromMinutes(1));
     }
 
     public void Save(string path, string expectedContent)

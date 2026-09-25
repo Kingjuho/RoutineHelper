@@ -2,5 +2,6 @@
   "intervals": [],
   "blockedSites": [],
   "blockedProcesses": [],
-  "shutdownReminder": "00:00"
+  "shutdownReminder": "00:00",
+  "shutdownReminderEnabled": true
 }

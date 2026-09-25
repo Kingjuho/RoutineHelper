@@ -12,6 +12,11 @@ internal sealed class SettingsForm : Form
     private readonly DateTimePicker _start = TimePicker("StartTime");
     private readonly DateTimePicker _end = TimePicker("EndTime");
     private readonly DateTimePicker _reminder = TimePicker("ReminderTime");
+    private readonly CheckBox _reminderEnabled = new()
+    {
+        Name = "ReminderEnabled", Text = "매일 종료 알림", AutoSize = true,
+        Margin = new Padding(0, 5, 10, 5)
+    };
     private readonly TextBox _sites = LinesBox("BlockedSites");
     private readonly TextBox _processes = LinesBox("BlockedProcesses");
     private readonly Label _status = new() { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(0, 6, 0, 0) };
@@ -53,7 +58,7 @@ internal sealed class SettingsForm : Form
 
         var reminderRow = FlowRow();
         reminderRow.Margin = new Padding(0, 12, 0, 4);
-        reminderRow.Controls.Add(Caption("매일 종료 알림"));
+        reminderRow.Controls.Add(_reminderEnabled);
         reminderRow.Controls.Add(_reminder);
         reminderRow.Controls.Add(Caption("알림만 표시하며 PC를 자동 종료하지 않습니다."));
         root.Controls.Add(reminderRow, 0, 2);
@@ -70,6 +75,11 @@ internal sealed class SettingsForm : Form
         buttons.Controls.Add(Button("닫기", (_, _) => Close()));
         root.Controls.Add(buttons, 0, 5);
         AcceptButton = save;
+        _reminderEnabled.CheckedChanged += (_, _) =>
+        {
+            _reminder.Enabled = _reminderEnabled.Checked;
+            MarkDirty();
+        };
         _reminder.ValueChanged += (_, _) => MarkDirty();
         _sites.TextChanged += (_, _) => MarkDirty();
         _processes.TextChanged += (_, _) => MarkDirty();
@@ -214,6 +224,8 @@ internal sealed class SettingsForm : Form
             _sites.Lines = config.BlockedSites.ToArray();
             _processes.Lines = config.BlockedProcesses.ToArray();
             _reminder.Value = DateTime.Today.Add(Config.ParseTime(config.ShutdownReminder));
+            _reminderEnabled.Checked = config.ShutdownReminderEnabled;
+            _reminder.Enabled = _reminderEnabled.Checked;
             _snapshot = snapshot;
             _dirty = false;
             _status.Text = "설정을 불러왔습니다. 창을 닫아도 트레이에서 계속 실행됩니다.";
@@ -230,7 +242,8 @@ internal sealed class SettingsForm : Form
         {
             BlockedSites = ReadLines(_sites),
             BlockedProcesses = ReadLines(_processes),
-            ShutdownReminder = FormatTime(_reminder)
+            ShutdownReminder = FormatTime(_reminder),
+            ShutdownReminderEnabled = _reminderEnabled.Checked
         };
         foreach (DataGridViewRow row in _schedule.Rows)
         {
