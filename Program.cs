@@ -8,6 +8,18 @@ internal static class Program
 {
     private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "config.json");
 
+    internal static bool TryCleanupIfAppStopped(Action cleanup,
+        string trayMutexName = @"Local\RoutineHelperTray", string legacyMutexName = @"Local\RoutineCheckerTray")
+    {
+        // 앱과 같은 실행 잠금을 정리가 끝날 때까지 유지해 시작·정리 사이의 경쟁을 막는다.
+        using var current = new Mutex(true, trayMutexName, out var currentCreated);
+        if (!currentCreated) return false;
+        using var legacy = new Mutex(true, legacyMutexName, out var legacyCreated);
+        if (!legacyCreated) return false;
+        cleanup();
+        return true;
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -15,15 +27,7 @@ internal static class Program
         {
             if (args.Contains("--reconcile", StringComparer.OrdinalIgnoreCase))
             {
-                Config config;
-                try { config = Config.Load(ConfigPath); }
-                catch
-                {
-                    HostsManager.Reconcile(false, []);
-                    throw;
-                }
-                // 복구 작업은 수동 종료 후 차단을 다시 켜지 않고, 만료된 차단만 정리한다.
-                if (!config.IsActive(DateTime.Now)) HostsManager.Reconcile(false, []);
+                TryCleanupIfAppStopped(() => HostsManager.Reconcile(false, []));
                 return 0;
             }
             if (args.Contains("--clear", StringComparer.OrdinalIgnoreCase))
@@ -75,6 +79,9 @@ internal sealed class RoutineContext : ApplicationContext
     private bool _busy;
     private string? _hostsError;
     private SettingsForm? _settings;
+    private readonly PomodoroSession _pomodoro = new();
+    private readonly ToolStripMenuItem _pomodoroToggle;
+    private readonly ToolStripMenuItem _pomodoroStatus;
     private string ReminderStatus => _config.ShutdownReminderEnabled ? _config.ShutdownReminder : "꺼짐";
 
     public RoutineContext(string configPath)
@@ -97,6 +104,12 @@ internal sealed class RoutineContext : ApplicationContext
         menu.Items.Add("메인 창 열기", null, (_, _) => OpenMainWindow());
         menu.Items.Add("설정 파일 열기", null, (_, _) => OpenConfiguration());
         menu.Items.Add("상태 보기", null, (_, _) => ShowStatus());
+        menu.Items.Add(new ToolStripSeparator());
+        _pomodoroToggle = new ToolStripMenuItem("포모도로 기법 활성화", null, (_, _) => TogglePomodoro());
+        _pomodoroStatus = new ToolStripMenuItem("포모도로 꺼짐 · 기존 시간표 적용") { Enabled = false };
+        menu.Items.Add(_pomodoroToggle);
+        menu.Items.Add(_pomodoroStatus);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("새로고침", null, (_, _) => RefreshConfiguration());
         menu.Items.Add("종료", null, (_, _) => ExitThread());
 
@@ -117,7 +130,7 @@ internal sealed class RoutineContext : ApplicationContext
         _timer.Start();
     }
 
-    private void Tick()
+    private void Tick(string? notification = null)
     {
         if (_busy) return;
         _busy = true;
@@ -130,7 +143,15 @@ internal sealed class RoutineContext : ApplicationContext
                 ReloadConfigIfChanged();
             }
 
-            var active = _config.IsActive(now);
+            var pomodoroEvent = _pomodoro.Update();
+            UpdatePomodoroDisplay();
+            if ((pomodoroEvent & PomodoroEvent.BreakEndingSoon) != 0)
+                notification = AddNotice(notification, $"휴식 종료까지 {(int)Math.Ceiling(_pomodoro.Remaining.TotalSeconds)}초 남았습니다. 집중이 시작되면 지정한 프로그램이 종료됩니다.");
+            else if ((pomodoroEvent & PomodoroEvent.BreakStarted) != 0)
+                notification = AddNotice(notification, "집중 시간이 끝났습니다. 5분간 휴식합니다.");
+            else if ((pomodoroEvent & PomodoroEvent.FocusStarted) != 0)
+                notification = AddNotice(notification, "휴식이 끝났습니다. 25분간 집중합니다.");
+            var active = _pomodoro.ShouldBlock(_config.IsActive(now));
             if (_lastActive != active || (now - _lastHostsCheck).Duration() >= TimeSpan.FromMinutes(1))
             {
                 try
@@ -143,6 +164,8 @@ internal sealed class RoutineContext : ApplicationContext
                 catch (Exception ex)
                 {
                     AppLog.Write($"hosts 동기화 실패: {ex}");
+                    if (_hostsError != ex.Message)
+                        notification = AddNotice(notification, "사이트 차단 적용/해제 실패: " + ex.Message);
                     _hostsError = ex.Message;
                     _lastHostsCheck = now;
                     _lastActive = active;
@@ -155,8 +178,16 @@ internal sealed class RoutineContext : ApplicationContext
                 _lastReminderDate = now.Date;
                 Directory.CreateDirectory(Path.GetDirectoryName(_reminderStatePath)!);
                 File.WriteAllText(_reminderStatePath, now.ToString("yyyy-MM-dd"));
-                _icon.ShowBalloonTip(10000, "RoutineHelper", "컴퓨터를 종료할 시간입니다.", ToolTipIcon.Info);
-                AppLog.Write("종료 시간 알림 표시");
+                notification = AddNotice(notification, "컴퓨터를 종료할 시간입니다.");
+                AppLog.Write("종료 시간 알림 요청");
+            }
+            if (notification != null)
+            {
+                if (_hostsError != null && !notification.Contains(_hostsError))
+                    notification = AddNotice(notification, "사이트 차단 적용/해제 실패: " + _hostsError);
+                _icon.ShowBalloonTip(10000, "RoutineHelper", notification,
+                    _hostsError is null ? ToolTipIcon.Info : ToolTipIcon.Warning);
+                AppLog.Write(notification);
             }
         }
         catch (Exception ex)
@@ -166,6 +197,42 @@ internal sealed class RoutineContext : ApplicationContext
         finally
         {
             _busy = false;
+        }
+    }
+
+    private static string AddNotice(string? current, string message) => current == null ? message : current + "\n" + message;
+
+    private string PomodoroStatus
+    {
+        get
+        {
+            if (!_pomodoro.Enabled) return "포모도로 꺼짐 · 기존 시간표 적용";
+            var seconds = (int)Math.Ceiling(_pomodoro.Remaining.TotalSeconds);
+            return $"포모도로 {(_pomodoro.Phase == PomodoroPhase.Focus ? "집중" : "휴식")} · {seconds / 60:00}:{seconds % 60:00} 남음";
+        }
+    }
+
+    private void UpdatePomodoroDisplay()
+    {
+        _pomodoroToggle.Text = _pomodoro.Enabled ? "포모도로 기법 비활성화" : "포모도로 기법 활성화";
+        _pomodoroStatus.Text = PomodoroStatus;
+        _icon.Text = _pomodoro.Enabled ? "RoutineHelper | " + PomodoroStatus : "RoutineHelper";
+    }
+
+    private void TogglePomodoro()
+    {
+        try
+        {
+            var stopping = _pomodoro.Enabled;
+            if (stopping) _pomodoro.Stop();
+            else _pomodoro.Start();
+            _lastHostsCheck = DateTime.MinValue;
+            Tick(stopping ? "포모도로를 종료하고 기존 시간표로 복귀했습니다." : "포모도로를 시작합니다. 25분 집중 후 5분 휴식을 반복합니다.");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"포모도로 전환 실패: {ex}");
+            _icon.ShowBalloonTip(5000, "RoutineHelper", ex.Message, ToolTipIcon.Error);
         }
     }
 
@@ -216,7 +283,7 @@ internal sealed class RoutineContext : ApplicationContext
                     LoadConfiguration();
                     Tick();
                     if (_hostsError != null) throw new IOException("사이트 차단 적용 실패: " + _hostsError);
-                    return "저장하고 적용했습니다. 현재 차단: " + (_config.IsActive(DateTime.Now) ? "활성" : "비활성");
+                    return "저장하고 적용했습니다. 현재 차단: " + (_pomodoro.ShouldBlock(_config.IsActive(DateTime.Now)) ? "활성" : "비활성") + " · " + PomodoroStatus;
                 });
                 _settings.FormClosed += (_, _) => _settings = null;
                 _settings.Show();
@@ -256,10 +323,7 @@ internal sealed class RoutineContext : ApplicationContext
         try
         {
             LoadConfiguration();
-            Tick();
-            _icon.ShowBalloonTip(3000, "RoutineHelper",
-                _hostsError is null ? "설정을 적용했습니다." : $"사이트 차단 적용 실패: {_hostsError}",
-                _hostsError is null ? ToolTipIcon.Info : ToolTipIcon.Warning);
+            Tick("설정을 적용했습니다.");
         }
         catch (Exception ex)
         {
@@ -298,8 +362,9 @@ internal sealed class RoutineContext : ApplicationContext
 
     private void ShowStatus()
     {
-        var active = _config.IsActive(DateTime.Now);
-        MessageBox.Show($"현재 차단: {(active ? "활성" : "비활성")}\n사이트: {_config.BlockedSites.Count}개\n프로세스: {_config.BlockedProcesses.Count}개\n종료 알림: {ReminderStatus}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
+        Tick();
+        var active = _pomodoro.ShouldBlock(_config.IsActive(DateTime.Now));
+        MessageBox.Show($"{PomodoroStatus}\n현재 차단: {(active ? "활성" : "비활성")}\n사이트: {_config.BlockedSites.Count}개\n프로세스: {_config.BlockedProcesses.Count}개\n종료 알림: {ReminderStatus}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
             "RoutineHelper 상태", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
@@ -327,6 +392,7 @@ internal sealed class RoutineContext : ApplicationContext
                 "RoutineHelper", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
+        _pomodoro.Stop();
         _timer.Stop();
         _timer.Dispose();
         _icon.Visible = false;

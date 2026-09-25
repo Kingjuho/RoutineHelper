@@ -203,13 +203,14 @@ try
     uiThread.Join();
     if (uiError != null) throw new Exception("GUI 검증 실패", uiError);
     HostsPolicyTests.Run(testDirectory.FullName);
+    PomodoroTests.Run(testDirectory.FullName);
 }
 finally
 {
     // 이 테스트가 직접 생성한 임시 디렉터리만 제거한다.
     testDirectory.Delete(recursive: true);
 }
-Console.WriteLine("모든 검증 통과: 숫자 요일·자정 경계·설정 저장·GUI 편집 및 hosts 관리 구역 정리·사용자 내용 보존");
+Console.WriteLine("모든 검증 통과: 숫자 요일·자정 경계·설정 저장·GUI 편집 및 hosts 관리 구역·사용자 내용 보존·포모도로 반복/예고/우선순위/예약 정리");
 
 static void Check(bool condition, string name)
 {
