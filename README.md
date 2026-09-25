@@ -1,0 +1,40 @@
+# RoutineHelper
+
+Windows 시스템 트레이에서 실행되는 루틴·집중 관리 애플리케이션입니다. C# / WinForms로 작성되었습니다.
+
+## 주요 기능
+
+- 요일별 여러 시간 구간에 지정한 사이트 접근 제한
+- 차단 시간에 지정한 프로세스를 감지하여 강제 종료
+- 매일 지정한 시각에 컴퓨터 종료 알림 표시 (자동 종료 아님)
+- 트레이에서 여는 GUI로 시간표와 차단 대상 설정
+
+## 사용 방법
+
+Windows와 [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)이 필요합니다. 소스를 내려받았다면 아래 빌드 방법을 먼저 진행하세요.
+
+1. 배포 폴더의 **`RoutineHelper.exe`**를 실행하고 관리자 권한을 허용합니다. EXE와 함께 제공되는 DLL·JSON 파일도 같은 폴더에 보관하세요.
+2. 트레이 아이콘을 좌클릭하거나 우클릭 → **메인 창 열기**를 선택합니다.
+3. **요일 · 시간표**에서 시간 구간과 요일을 지정합니다.
+4. **차단 대상**에 도메인과 프로세스 이름을 한 줄에 하나씩 입력합니다. 예: `www.youtube.com`, `GenshinImpact.exe`. 종료 알림 시각도 설정합니다.
+5. **저장하고 적용**을 누릅니다. 설정은 EXE 옆의 `config.json`에 저장됩니다.
+
+`www.youtube.com`을 입력하면 `youtube.com`도 함께 차단합니다. 시간표는 Windows 로컬 시각을 기준으로 하며, 자정을 넘는 구간은 시작 요일에 속합니다.
+
+설정 창을 닫아도 앱은 계속 실행됩니다. 완전히 종료하려면 트레이 우클릭 → **종료**를 선택하세요. 설정 파일을 직접 수정한 경우 **새로고침**으로 즉시 적용할 수 있습니다.
+
+> 사이트 차단은 hosts의 RoutineHelper BEGIN/END 구역만 추가·삭제합니다. 구역 밖의 내용은 유지하며 전체 백업은 사용하지 않습니다. 강제 종료 후 앱을 삭제하면 차단이 남을 수 있으므로 삭제 전 정상 종료하세요. 표시를 직접 변경·삭제한 경우에는 남은 차단 항목을 수동으로 정리해야 합니다. 프로세스 강제 종료 시 저장하지 않은 작업은 사라질 수 있습니다.
+
+## 빌드 방법
+
+Windows용 [.NET 9 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)를 설치하고, 프로젝트 폴더에서 실행합니다.
+
+```powershell
+dotnet build RoutineHelper.csproj -c Release
+dotnet run --project tests/RoutineHelper.Tests.csproj -c Release
+dotnet publish RoutineHelper.csproj -c Release -p:PublishProfile=Folder
+```
+
+빌드·테스트 후 사용할 파일은 **`dist\RoutineHelper\RoutineHelper.exe`**입니다. 배포할 때는 해당 폴더의 실행 파일과 DLL·JSON 파일을 함께 전달하세요.
+
+재빌드·게시 전에는 실행 중인 앱을 종료하고, 기존 `dist\RoutineHelper\config.json`을 별도로 보관하세요. 게시 과정에서 기본 설정으로 덮어쓸 수 있습니다.

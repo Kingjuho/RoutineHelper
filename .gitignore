@@ -1,0 +1,51 @@
+# .NET build / publish output (including nested test projects)
+[Bb]in/
+[Oo]bj/
+/dist/
+/artifacts/
+*.pdb
+
+# IDE and per-user settings
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Test and coverage output
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# Logs, temporary files and local hosts backups
+*.log
+*.tmp
+*.bak
+*.backup
+*.backup.*
+hosts
+hosts.original.backup*
+
+# Local configuration and credentials; keep public examples
+.env
+.env.*
+!.env.example
+!.env.template
+config.local.json
+config.*.local.json
+*.pfx
+*.p12
+*.key
+*.pem
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep the root config.json, Assets and publish profiles in source control.

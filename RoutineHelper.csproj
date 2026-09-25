@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>RoutineHelper</AssemblyName>
+    <RootNamespace>RoutineHelper</RootNamespace>
+    <AssemblyTitle>RoutineHelper</AssemblyTitle>
+    <Product>RoutineHelper</Product>
+    <Description>RoutineHelper</Description>
+    <UseAppHost>true</UseAppHost>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\RoutineHelper.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Compile Remove="tests/**/*.cs" />
+    <EmbeddedResource Include="Assets\RoutineHelper.ico" LogicalName="RoutineHelper.AppIcon" />
+  </ItemGroup>
+</Project>
