@@ -15,6 +15,13 @@ var config = new Config
     BlockedProcesses = ["Game.exe"]
 };
 config.Validate();
+// 실제 프로세스를 종료하지 않고 설정 진입점과 종료 직전 보호 조건을 검증한다.
+foreach (var protectedName in new[] { "RoutineHelper.exe", "ROUTINEHELPER.EXE", "RoutineChecker.exe", "explorer.exe", "LsAsS.ExE", "svchost.exe", "csrss.exe", "services.exe", "MsMpEng.exe" })
+    ExpectInvalidConfig(() => Config.Parse(JsonSerializer.Serialize(new { blockedProcesses = new[] { protectedName } })), "보호 대상 JSON 등록 거부: " + protectedName);
+Check(ProcessProtection.ShouldSkip(Environment.ProcessId, "RenamedHelper.exe"), "이름이 바뀌어도 자기 PID 보호");
+Check(ProcessProtection.ShouldSkip(int.MaxValue, "EXPLORER.EXE"), "설정 검증을 우회해도 종료 직전에 보호");
+Check(ProcessProtection.ShouldSkip(0, "Idle.exe") && ProcessProtection.ShouldSkip(4, "System.exe"), "시스템 PID 보호");
+Check(!ProcessProtection.ShouldSkip(int.MaxValue, "GenshinImpact.exe"), "일반 차단 대상 유지");
 Check(config.IsActive(new DateTime(2026, 9, 25, 11, 30, 0)), "구간 시작");
 Check(!config.IsActive(new DateTime(2026, 9, 25, 13, 0, 0)), "구간 끝");
 Check(config.IsActive(new DateTime(2026, 9, 25, 0, 30, 0)), "자정 넘김");
@@ -102,6 +109,9 @@ try
     var configPath = Path.Combine(testDirectory.FullName, "config.json");
     var originalConfig = """{"intervals":[{"start":"11:30","end":"13:00"}],"blockedSites":[],"blockedProcesses":[],"shutdownReminder":"02:00"}""";
     File.WriteAllText(configPath, originalConfig);
+    var unsafeConfig = new Config { BlockedProcesses = ["explorer.exe"] };
+    ExpectInvalidConfig(() => unsafeConfig.Save(configPath, originalConfig), "GUI 저장 경로에서도 보호 대상 거부");
+    Check(File.ReadAllText(configPath) == originalConfig, "보호 대상 저장 거부 시 기존 설정 보존");
     var editedConfig = Config.Load(configPath);
     editedConfig.Intervals[0].Days = [1, 2, 3, 4, 5];
     editedConfig.Save(configPath, originalConfig);

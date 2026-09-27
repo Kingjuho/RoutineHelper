@@ -350,6 +350,7 @@ internal sealed class RoutineContext : ApplicationContext
                 {
                     try
                     {
+                        if (ProcessProtection.ShouldSkip(process.Id, name)) continue;
                         process.Kill();
                         AppLog.Write($"프로세스 종료: {name} (PID {process.Id})");
                     }

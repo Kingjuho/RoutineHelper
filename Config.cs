@@ -57,6 +57,8 @@ internal sealed class Config
             if (string.IsNullOrWhiteSpace(process) || !process.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                 process.IndexOfAny(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) >= 0)
                 throw new InvalidDataException($"실행 파일 이름만 입력하세요: {process}");
+            if (ProcessProtection.IsProtectedName(process))
+                throw new InvalidDataException($"RoutineHelper 또는 주요 시스템 프로세스는 차단할 수 없습니다: {process}");
         }
     }
 
