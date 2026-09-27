@@ -365,8 +365,12 @@ internal sealed class RoutineContext : ApplicationContext
     {
         Tick();
         var active = _pomodoro.ShouldBlock(_config.IsActive(DateTime.Now));
-        MessageBox.Show($"{PomodoroStatus}\n현재 차단: {(active ? "활성" : "비활성")}\n사이트: {_config.BlockedSites.Count}개\n프로세스: {_config.BlockedProcesses.Count}개\n종료 알림: {ReminderStatus}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
-            "RoutineHelper 상태", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        var hostsStatus = _hostsError is null
+            ? $"사이트 차단 적용: 정상 ({(active && _config.BlockedSites.Count > 0 ? "차단" : "해제")})"
+            : $"사이트 차단 적용/해제: 실패\n오류: {_hostsError}\n실제 사이트 차단 상태가 설정과 다를 수 있습니다.\n원인을 해결한 뒤 트레이에서 '새로고침'을 누르세요.";
+        MessageBox.Show($"{PomodoroStatus}\n차단 설정 (시간표·포모도로): {(active ? "활성" : "비활성")}\n{hostsStatus}\n\n차단 목록: 사이트 {_config.BlockedSites.Count}개 · 프로세스 {_config.BlockedProcesses.Count}개\n종료 알림: {ReminderStatus}\n설정 파일: {_configPath}\n로그: {AppLog.PathName}",
+            "RoutineHelper 상태", MessageBoxButtons.OK,
+            _hostsError is null ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     protected override void ExitThreadCore()
@@ -388,6 +392,7 @@ internal sealed class RoutineContext : ApplicationContext
         }
         catch (Exception ex)
         {
+            _hostsError = ex.Message;
             AppLog.Write($"종료 전 사이트 차단 해제 실패: {ex}");
             MessageBox.Show($"사이트 차단을 해제하지 못했습니다. 앱을 계속 실행합니다.\n{ex.Message}",
                 "RoutineHelper", MessageBoxButtons.OK, MessageBoxIcon.Error);
